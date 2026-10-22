@@ -3,11 +3,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const ExcelJS = require('exceljs');
-const nodemailer = require('nodemailer');
 
 const PORT = process.env.PORT || 3000;
-const CAL_ID = process.env.CALENDAR_ID || 'mohamedjlaiel4000@gmail.com';
-const KEY_FILE = process.env.GOOGLE_KEY_FILE || path.join(__dirname, 'service-account.json');
 const FILE = path.join(__dirname, 'data', 'bookings.xlsx');
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
 const TZ = 'Africa/Tunis';   // UTC+1, no daylight saving
@@ -58,46 +55,117 @@ function excelBusy(ws, date, barber) {
   return out;
 }
 
-// ---------- Google Calendar ----------
-let cal = null;
-function getCal() {
-  if (cal !== null) return cal;
-  cal = false;
-  try {
-    const { google } = require('googleapis');
-    let auth;
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
-      // Use JSON string from environment variable for cloud deployments
-      try {
-        const cleanJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON.trim().replace(/^'|'$/g, '').replace(/^"|"$/g, '');
-        const credentials = JSON.parse(cleanJson);
-        auth = new google.auth.JWT(
-          credentials.client_email,
-          null,
-          credentials.private_key,
-          ['https://www.googleapis.com/auth/calendar']
-        );
-      } catch (parseError) {
-        console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', parseError.message);
-        return null;
-      }
-    } else if (fs.existsSync(KEY_FILE)) {
-      // Fallback to file for local development
-      auth = new google.auth.GoogleAuth({ keyFile: KEY_FILE, scopes: ['https://www.googleapis.com/auth/calendar'] });
-    } else {
-      console.warn('No Google credentials found (Env var or File): bookings go to Excel only.');
-      return null;
-    }
-    cal = google.calendar({ version: 'v3', auth });
-  } catch (e) { console.error('Calendar setup failed:', e.message); }
-  return cal;
+// ---------- Availability ----------
+async function slotList(date, svcId, barber, ws) {
+  const svc = SERVICES[svcId];
+  const hrs = HOURS[new Date(date + 'T00:00:00Z').getUTCDay()];
+  if (!svc || !hrs || !BARBERS.includes(barber)) return [];
+  const t = tunisNow(), today = t.toISOString().slice(0, 10), nowMin = t.getUTCHours() * 60 + t.getUTCMinutes();
+  if (date < today) return [];
+  const busy = excelBusy(ws, date, barber);
+  const out = [];
+  for (let s = toMin(hrs[0]); s + svc.min <= toMin(hrs[1]); s += STEP) {
+    const free = !(date === today && s <= nowMin) && !busy.some(([a, b]) => s < b && s + svc.min > a);
+    out.push({ time: toStr(s), free });
+  }
+  return out;
 }
-async function calendarBusy(date, barber) {
-  const c = getCal(); if (!c) return [];
+
+// ---------- Server ----------
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/api/slots', async (req, res) => {
   try {
-    const r = await c.events.list({ calendarId: CAL_ID, singleEvents: true,
-      timeMin: date + 'T00:00:00+01:00', timeMax: date + 'T23:59:59+01:00' });
-    return (r.data.items || []).filter(e => e.start && e.start.dateTime && e.status !== 'cancelled' && (!(e.extendedProperties && e.extendedProperties.private && e.extendedProperties.private.barber) || e.extendedProperties.private.barber === barber)).map(e => {
+    const { date, service, barber } = req.query;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ error: 'Bad date' });
+    const { ws } = await loadBook();
+    res.json({ slots: await slotList(date, service, barber, ws) });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }); }
+});
+
+let chain = Promise.resolve();                       // one booking at a time = no double booking
+const lock = fn => { const r = chain.then(fn, fn); chain = r.catch(() => {}); return r; };
+
+app.post('/api/book', (req, res) => lock(async () => {
+  try {
+    const { service, date, time, name, phone, email, barber, lang } = req.body || {};
+    const svc = SERVICES[service];
+    if (!svc || !/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !/^\d{2}:\d{2}$/.test(time || ''))
+      return res.status(400).json({ error: 'Invalid booking data.' });
+    if (!name || name.length < 2 || name.length > 60) return res.status(400).json({ error: 'Please enter your name.' });
+    if (!/^\+?[0-9 ]{8,15}$/.test(phone || '')) return res.status(400).json({ error: 'Please enter a valid phone number.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email || '') || email.length > 100) return res.status(400).json({ error: 'Please enter a valid email address.' });
+    if (!BARBERS.includes(barber)) return res.status(400).json({ error: 'Invalid booking data.' });
+
+    const { wb, ws } = await loadBook();
+    const slot = (await slotList(date, service, barber, ws)).find(s => s.time === time);
+    if (!slot || !slot.free) return res.status(409).json({ error: 'Sorry, this time is already booked. Please pick another one.' });
+
+    const end = toStr(toMin(time) + svc.min);
+    ws.addRow([Date.now().toString(36), tunisNow().toISOString().slice(0, 16).replace('T', ' '),
+               name, phone, svc.name, svc.price, date, time, end, 'Confirmed', '', email, barber, ['fr', 'ar'].includes(lang) ? lang : 'en']);
+    try { await wb.xlsx.writeFile(FILE); }
+    catch (e) {
+      return res.status(500).json({ error: 'Could not save. Close bookings.xlsx if it is open in Excel.' });
+    }
+    res.json({ ok: true, emailed: false });
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }); }
+}));
+
+// ---------- Admin ----------
+const admin = (req, res, next) => (req.get('x-admin-password') === ADMIN_PASSWORD ? next() : res.status(401).json({ error: 'Wrong password' }));
+app.get('/api/admin/bookings', admin, async (req, res) => {
+  try {
+    const { ws } = await loadBook(); const rows = [];
+    ws.eachRow((row, n) => { if (n > 1) rows.push([1,2,3,4,5,6,7,8,9,10,12,13].map(i => String(row.getCell(i).value ?? ''))); });
+    res.json({ rows: rows.reverse() });
+  } catch (e) { res.status(500).json({ error: 'Server error' }); }
+});
+app.get('/api/admin/stats', admin, async (req, res) => {
+  try {
+    const { ws } = await loadBook();
+    const today = tunisNow().toISOString().slice(0, 10);
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : today.slice(0, 7);
+    const year = /^\d{4}$/.test(req.query.year || '') ? req.query.year : today.slice(0, 4);
+    const blank = () => ({ revenue: 0, count: 0 });
+    const add = (o, k, p) => { o[k] = o[k] || blank(); o[k].revenue += p; o[k].count++; };
+    const out = { today, month, year, days: {}, months: {}, years: {}, barbersMonth: {}, barbersYear: {},
+                  totals: { today: blank(), month: blank(), year: blank() } };
+    ws.eachRow((row, n) => {
+      if (n === 1) return;
+      const v = i => String(row.getCell(i).value ?? '');
+      if (v(10) === 'Cancelled') return;
+      const d = v(7), p = Number(v(6)) || 0, b = v(13) || 'Not set';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      add(out.years, d.slice(0, 4), p);
+      if (d === today) add(out.totals, 'today', p);
+      if (d.slice(0, 4) === year) { add(out.months, d.slice(0, 7), p); add(out.barbersYear, b, p); add(out.totals, 'year', p); }
+      if (d.slice(0, 7) === month) { add(out.days, d, p); add(out.barbersMonth, b, p); add(out.totals, 'month', p); }
+    });
+    res.json(out);
+  } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/admin/cancel', admin, (req, res) => lock(async () => {
+  try {
+    const { wb, ws } = await loadBook(); let info = null;
+    ws.eachRow((row, n) => {
+      if (n > 1 && String(row.getCell(1).value) === req.body.id) {
+        const v = i => String(row.getCell(i).value ?? '');
+        if (v(10) === 'Cancelled') return;
+        row.getCell(10).value = 'Cancelled';
+        info = { name: v(3), service: v(5), date: v(7), time: v(8), email: v(12), barber: v(13) || 'our barber', lang: v(14) || 'en' };
+      }
+    });
+    if (!info) return res.status(404).json({ error: 'Booking not found or already cancelled' });
+    await wb.xlsx.writeFile(FILE);
+    res.json({ ok: true, emailed: false, note: 'Booking cancelled.' });
+  } catch (e) { res.status(500).json({ error: 'Could not save. Close bookings.xlsx if it is open in Excel.' }); }
+}));
+
+app.listen(PORT, () => console.log(`Ziko Hairstyle running at http://localhost:${PORT}`));extendedProperties.private && e.extendedProperties.private.barber) || e.extendedProperties.private.barber === barber)).map(e => {
       const m = t => { const x = new Date(t); return (x.getUTCHours() * 60 + x.getUTCMinutes() + 60) % 1440; };
       return [m(e.start.dateTime), m(e.end.dateTime)];
     });
