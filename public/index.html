@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ziko Hairstyle</title>
+<link rel="stylesheet" href="style.css"></head><body>
+<nav class="lang"><button data-l="en">EN</button><button data-l="fr">FR</button><button data-l="ar">عربي</button></nav>
+
+<header class="hero"><div><div class="status"><i class="dot" id="hd"></i><span id="hs">Open now</span></div><div class="eyebrow">Barber Shop in Sfax</div><h1>Ziko<span>Hairstyle</span></h1><p class="sub">Sharp cuts. Clean style. Book your chair in under a minute.</p><div class="cta"><a class="btn" href="#book">Book Now</a><a class="btn ghost" href="#services">See Prices</a></div><div class="stats"><div><b>Thu–Tue</b><small>Open days</small></div><div><b>10:00</b><small>First slot</small></div><div><b>15 TND</b><small>Haircut from</small></div></div></div><div class="hero-art"><img alt="Ziko Hairstyle logo" src="logo.jpg"></div></header>
+
+<section id="services"><h2>Services &amp; Prices</h2><p>Sample prices, editable by the barber.</p>
+<div class="grid">
+<div class="card svc"><div><h3>Haircut</h3><small>30 min</small></div><span class="price">15 TND</span></div>
+<div class="card svc"><div><h3>Beard Trim</h3><small>20 min</small></div><span class="price">8 TND</span></div>
+<div class="card svc"><div><h3>Haircut + Beard</h3><small>45 min</small></div><span class="price">20 TND</span></div>
+<div class="card svc"><div><h3>Kids' Cut</h3><small>25 min</small></div><span class="price">10 TND</span></div>
+</div></section>
+
+<section><h2>Working Hours</h2><p>Sample schedule.</p>
+<span class="badge" id="ob">Open now</span>
+<div class="card"><table>
+<tr><td>Thursday – Tuesday</td><td>10:00 – 22:00</td></tr>
+<tr class="closed"><td>Wednesday</td><td>Closed</td></tr></table></div></section>
+
+<section><h2>Find Us</h2><p>Sfax, Tunisia</p><iframe class="map" title="Map" loading="lazy" src="https://www.google.com/maps?q=34.790917,10.780528&output=embed"></iframe><br><br><a class="btn" target="_blank" href="https://www.google.com/maps/search/?api=1&query=34.790917,10.780528">Get Directions</a></section>
+
+<section id="book"><h2>Book Your Visit</h2><p>Taken times are disabled automatically.</p>
+<div class="card">
+<label>Service</label><select id="svc"><option value="haircut">Haircut – 15 TND</option><option value="beard">Beard Trim – 8 TND</option><option value="both">Haircut + Beard – 20 TND</option><option value="kids">Kids' Cut – 10 TND</option></select>
+<label>Barber</label><select id="barber"><option value="Wassime">Wassime</option><option value="Yacine">Yacine</option></select>
+<label>Date</label><input type="date" id="d">
+<label>Time</label><div class="slots" id="slots"></div>
+<label>Name</label><input id="nm" placeholder="Your name">
+<label>Phone</label><input id="ph" type="tel" placeholder="+216 XX XXX XXX">
+<label>Email</label><input id="em" type="email" placeholder="name@example.com">
+<br><br><button class="btn" id="go" style="width:100%">Confirm Booking</button>
+<div id="msg"></div></div></section>
+<footer><div class="soc"><a href="https://www.instagram.com/ziko_hairstyle/" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a><a href="https://www.facebook.com/wassim.zekri.9" target="_blank" rel="noopener" aria-label="Facebook"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M14 8V6.5c0-.8.2-1.2 1.3-1.2H17V2h-2.6C11.4 2 10 3.7 10 6.2V8H8v3.3h2V22h4V11.3h2.7L17 8h-3z"/></svg></a></div>© Ziko Hairstyle<br><a href="tel:+21629090385">+216 29 090 385</a><br><a href="mailto:mohamedjlaiel4000@gmail.com">mohamedjlaiel4000@gmail.com</a><br><a href="https://wa.me/21629090385" target="_blank">WhatsApp</a> &nbsp; <a href="admin.html">Admin</a></footer>
+
+<div id="done" hidden>
+<div class="done-box">
+<div class="check">&#10003;</div>
+<h2>Booking confirmed!</h2>
+<p>Thank you for choosing Ziko Hairstyle. We are waiting for you.</p>
+<div class="card sum">
+<div><span>Service</span><b id="ds"></b></div>
+<div><span>Barber</span><b id="db"></b></div>
+<div><span>Date</span><b id="dd"></b></div>
+<div><span>Time</span><b id="dt"></b></div>
+</div>
+<p id="de" hidden>A confirmation email was sent.</p>
+<p>Follow us</p>
+<div class="soc"><a href="https://www.instagram.com/ziko_hairstyle/" target="_blank" rel="noopener" aria-label="Instagram"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a><a href="https://www.facebook.com/wassim.zekri.9" target="_blank" rel="noopener" aria-label="Facebook"><svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M14 8V6.5c0-.8.2-1.2 1.3-1.2H17V2h-2.6C11.4 2 10 3.7 10 6.2V8H8v3.3h2V22h4V11.3h2.7L17 8h-3z"/></svg></a></div>
+<button class="btn" id="back" type="button">Back to home</button>
+</div></div>
+<script src="script.js"></script></body></html>
