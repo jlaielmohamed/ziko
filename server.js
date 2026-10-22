@@ -64,11 +64,31 @@ function getCal() {
   if (cal !== null) return cal;
   cal = false;
   try {
-    if (fs.existsSync(KEY_FILE)) {
-      const { google } = require('googleapis');
-      const auth = new google.auth.GoogleAuth({ keyFile: KEY_FILE, scopes: ['https://www.googleapis.com/auth/calendar'] });
-      cal = google.calendar({ version: 'v3', auth });
-    } else console.warn('No service-account.json found: bookings go to Excel only.');
+    const { google } = require('googleapis');
+    let auth;
+    if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+      // Use JSON string from environment variable for cloud deployments
+      try {
+        const cleanJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON.trim().replace(/^'|'$/g, '').replace(/^"|"$/g, '');
+        const credentials = JSON.parse(cleanJson);
+        auth = new google.auth.JWT(
+          credentials.client_email,
+          null,
+          credentials.private_key,
+          ['https://www.googleapis.com/auth/calendar']
+        );
+      } catch (parseError) {
+        console.error('Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON:', parseError.message);
+        return null;
+      }
+    } else if (fs.existsSync(KEY_FILE)) {
+      // Fallback to file for local development
+      auth = new google.auth.GoogleAuth({ keyFile: KEY_FILE, scopes: ['https://www.googleapis.com/auth/calendar'] });
+    } else {
+      console.warn('No Google credentials found (Env var or File): bookings go to Excel only.');
+      return null;
+    }
+    cal = google.calendar({ version: 'v3', auth });
   } catch (e) { console.error('Calendar setup failed:', e.message); }
   return cal;
 }
@@ -163,12 +183,19 @@ const CONFIRM = {
 };
 async function sendConfirm(to, lang, n, d, t, w, sv, p) {
   const m = getMailer();
-  if (!m) return false;
+  if (!m) {
+    console.error('Email failed: Mailer not initialized. Check SMTP_USER and SMTP_PASS in environment variables.');
+    return false;
+  }
   try {
     const T = CONFIRM[lang] || CONFIRM.en;
     await m.sendMail({ from: `"Ziko Hairstyle" <${process.env.SMTP_USER}>`, to, subject: T.s, text: T.b(n, d, t, w, sv, p) });
     return true;
-  } catch (e) { console.error('Confirmation email failed:', e.message); return false; }
+  } catch (e) {
+    console.error('Confirmation email failed:', e.message);
+    console.error('Full Error:', e);
+    return false;
+  }
 }
 
 // ---------- Admin ----------
