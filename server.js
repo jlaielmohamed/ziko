@@ -170,8 +170,7 @@ app.post('/api/book', (req, res) => lock(async () => {
       if (eventId) await c.events.delete({ calendarId: CAL_ID, eventId }).catch(() => {});
       return res.status(500).json({ error: 'Could not save. Close bookings.xlsx if it is open in Excel.' });
     }
-    const emailed = await sendConfirm(email, ['fr', 'ar'].includes(lang) ? lang : 'en', name, date, time, barber, svc.name, svc.price);
-    res.json({ ok: true, emailed });
+    res.json({ ok: true, emailed: false });
   } catch (e) { console.error(e); res.status(500).json({ error: 'Server error' }); }
 }));
 
