@@ -104,6 +104,9 @@ async function verifyAdminToken(token) {
     const userResponse = await fetch(base + '/auth/v1/user', { headers: { apikey: key, Authorization: 'Bearer ' + token } });
     if (!userResponse.ok) return { ok: false, error: 'Your session has expired. Please sign in again.' };
     const user = await userResponse.json();
+    const configuredAdminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    if (!configuredAdminEmail) return { configured: false, error: 'ADMIN_EMAIL is not configured on the server.' };
+    if (String(user.email || '').trim().toLowerCase() !== configuredAdminEmail) return { ok: false, error: 'Sign in with the configured Ziko admin email.' };
     const adminResponse = await fetch(base + '/rest/v1/admin_users?select=user_id&user_id=eq.' + encodeURIComponent(user.id) + '&limit=1', {
       headers: { apikey: key, Authorization: 'Bearer ' + token }
     });

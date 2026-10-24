@@ -5,7 +5,7 @@ A responsive barbershop booking website and private studio dashboard for Ziko Ha
 ## Run locally
 
 1. Install Node.js 20.19 or later.
-2. Copy `.env.example` to `.env` and set the Supabase project URL and publishable/anon key.
+2. Copy the example environment file to `.env`; set the Supabase project URL and publishable/anon key, and set `ADMIN_EMAIL` to the admin account email.
 3. Run `npm install`, then `npm start`.
 4. Open `http://localhost:3000`.
 
@@ -22,7 +22,7 @@ The public booking site works without Supabase. Admin sign-in requires a Supabas
    `insert into public.admin_users (user_id) values ('YOUR_AUTH_USER_UUID');`
 5. Rebuild/restart with `npm start`.
 
-The only application table in Supabase is `public.admin_users`, an allowlist for admin accounts. Row level security permits an authenticated user to read only their own allowlist row. The server independently checks the Supabase Auth session and allowlist before serving the dashboard or admin APIs. The publishable/anon key is intended for browser use; do not place a Supabase service-role key in the frontend or commit credentials.
+Admin access requires the signed-in Supabase Auth email to match `ADMIN_EMAIL`, and the user UUID must also appear in the admin allowlist. The only application table in Supabase is `public.admin_users`, an allowlist for admin accounts. Row level security permits an authenticated user to read only their own allowlist row. The server independently checks the Supabase Auth session and allowlist before serving the dashboard or admin APIs. The publishable/anon key is intended for browser use; do not place a Supabase service-role key in the frontend or commit credentials.
 
 ## Features
 
