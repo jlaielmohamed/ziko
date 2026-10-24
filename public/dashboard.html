@@ -1,18 +1,16 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ziko Hairstyle - Dashboard</title><link rel="stylesheet" href="style.css"></head><body>
-<div class="admin"><h2>Revenue dashboard</h2>
-<p><a href="admin.html" style="color:var(--gold)">Bookings</a> &nbsp; <a href="index.html" style="color:var(--gold)">Back to site</a></p>
-<div class="card" id="login"><label>Admin password</label><input type="password" id="pw"><br><br><button class="btn" id="ok">Log in</button></div>
-<div id="dash" hidden>
-<div class="ctl"><div><label>Month</label><input type="month" id="m"></div><div><label>Year</label><input type="number" id="y" min="2020" max="2100"></div></div>
-<div class="stats3">
-<div class="card"><small id="l1"></small><div class="big" id="v1"></div><small id="c1"></small></div>
-<div class="card"><small id="l2"></small><div class="big" id="v2"></div><small id="c2"></small></div>
-<div class="card"><small id="l3"></small><div class="big" id="v3"></div><small id="c3"></small></div>
-</div>
-<h3>Daily revenue (selected month)</h3><div class="card"><div class="bars" id="cd"></div></div>
-<h3>Monthly revenue (selected year)</h3><div class="card"><div class="bars" id="cm"></div></div>
-<h3>Yearly revenue</h3><div class="card"><div class="bars" id="cy"></div></div>
-<h3>By barber</h3><div class="card wrap"><table id="tb"></table></div>
-<p style="color:var(--mut);font-size:14px">Revenue counts confirmed bookings by appointment date, including upcoming ones. Cancelled bookings are not counted.</p>
-</div></div><script src="dashboard.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f5f6f2"><title>Studio dashboard — Ziko Hairstyle</title><link rel="stylesheet" href="/style.css"></head>
+<body class="dashboard-page">
+<header class="dashboard-header"><a class="brand" href="/"><img src="/logo.jpg" alt="" class="brand-mark"><span>ZIKO <small>BARBER STUDIO</small></span></a><div class="dashboard-user"><span id="adminEmail"></span><button class="signout-btn" id="signout" type="button">Sign out</button></div></header>
+<div class="dashboard-shell"><aside class="dash-sidebar"><p class="sidebar-label">STUDIO</p><button class="side-link active" data-panel="overview">Overview</button><button class="side-link" data-panel="appointments">Appointments</button><button class="side-link" data-panel="services">Services</button><button class="side-link" data-panel="hours">Business hours</button><button class="side-link" data-panel="blocked">Blocked dates</button><button class="side-link" data-panel="settings">Shop settings</button><a class="side-back" href="/">← View public site</a></aside>
+<main class="dash-main"><div id="dashMessage" class="dash-message" role="status" aria-live="polite"></div>
+<section class="dash-panel active" id="panel-overview"><p class="eyebrow">Your studio at a glance</p><div class="dash-heading"><div><h1>Overview</h1><p>Here’s what’s happening at Ziko.</p></div><a class="btn btn-small" href="/#book">New appointment ↗</a></div><div class="stats3"><article class="dash-stat"><small>Today</small><div class="big" id="todayTotal">—</div><span id="todayCount">Loading appointments…</span></article><article class="dash-stat"><small>This month</small><div class="big" id="monthTotal">—</div><span id="monthCount"></span></article><article class="dash-stat"><small>This year</small><div class="big" id="yearTotal">—</div><span id="yearCount"></span></article></div><div class="dash-card"><div class="dash-card-head"><h2>Recent appointments</h2><button class="quiet-btn" data-goto="appointments">View all →</button></div><div class="table-wrap"><table id="recentTable"></table></div></div></section>
+<section class="dash-panel" id="panel-appointments"><p class="eyebrow">Manage your schedule</p><div class="dash-heading"><div><h1>Appointments</h1><p>Review requests and update appointment status.</p></div></div><div class="filter-row"><input type="date" id="filterDate" aria-label="Filter by date"><select id="filterStatus" aria-label="Filter by status"><option value="">All statuses</option><option>Requested</option><option>Confirmed</option><option>Completed</option><option>Cancelled</option></select><button class="quiet-btn" id="clearFilters">Clear filters</button></div><div class="dash-card table-wrap"><table id="appointmentsTable"></table></div></section>
+<section class="dash-panel" id="panel-services"><p class="eyebrow">What you offer</p><div class="dash-heading"><div><h1>Services</h1><p>Update the menu clients see when booking.</p></div><button class="btn btn-small" id="addService">Add service +</button></div><div id="serviceEditor" class="editor-grid"></div><button class="btn save-settings" data-save="services">Save services</button></section>
+<section class="dash-panel" id="panel-hours"><p class="eyebrow">Set your availability</p><div class="dash-heading"><div><h1>Business hours</h1><p>Closed days and hours directly affect online availability.</p></div></div><div class="dash-card" id="hoursEditor"></div><button class="btn save-settings" data-save="hours">Save business hours</button></section>
+<section class="dash-panel" id="panel-blocked"><p class="eyebrow">Manage exceptions</p><div class="dash-heading"><div><h1>Blocked dates</h1><p>Prevent appointments on holidays or days away.</p></div></div><div class="dash-card blocked-editor"><div class="field"><label for="blockedDate">Add a date</label><div class="inline-control"><input type="date" id="blockedDate"><button class="btn btn-small" id="addBlocked">Block date</button></div></div><div id="blockedList" class="blocked-list"></div></div><button class="btn save-settings" data-save="blocked">Save blocked dates</button></section>
+<section class="dash-panel" id="panel-settings"><p class="eyebrow">Studio details</p><div class="dash-heading"><div><h1>Shop settings</h1><p>Keep your shop details and barber roster up to date.</p></div></div><div class="dash-card settings-form"><div class="field-row"><div class="field"><label for="shopName">Shop name</label><input id="shopName"></div><div class="field"><label for="shopLocation">Location</label><input id="shopLocation"></div></div><div class="field-row"><div class="field"><label for="shopPhone">Phone</label><input id="shopPhone"></div><div class="field"><label for="shopEmail">Email</label><input id="shopEmail" type="email"></div></div><div class="field"><label for="barberNames">Barbers (one per line)</label><textarea id="barberNames" rows="4"></textarea></div></div><button class="btn save-settings" data-save="settings">Save shop settings</button></section>
+</main></div>
+<script type="module" src="/dashboard.js"></script>
+</body></html>

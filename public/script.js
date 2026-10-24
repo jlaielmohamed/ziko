@@ -1,3 +1,86 @@
+var shopConfig = null;
+function escapeText(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+  });
+}
+function updateBookingSummary() {
+  var service = document.getElementById('summaryService');
+  if (service && svc.selectedIndex >= 0) service.textContent = svc.options[svc.selectedIndex].text.replace(' — ', ' · ');
+  var barberSummary = document.getElementById('summaryBarber');
+  if (barberSummary) barberSummary.textContent = br.value || 'Choose a barber';
+  var dateSummary = document.getElementById('summaryDate');
+  if (dateSummary) dateSummary.textContent = d.value ? new Date(d.value + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'Choose a date';
+  var timeSummary = document.getElementById('summaryTime');
+  if (timeSummary) timeSummary.textContent = sel || 'Choose a time';
+  var hasAppointment = Boolean(d.value && sel);
+  document.querySelectorAll('.booking-steps .step').forEach(function (step) {
+    var n = Number(step.getAttribute('data-step'));
+    step.classList.toggle('active', n === (hasAppointment ? 2 : 1));
+  });
+}
+function populateShopConfig(config) {
+  shopConfig = config;
+  var hoursTable = document.getElementById('hoursTable');
+  if (hoursTable && config.hours) {
+    var order = [4, 5, 6, 0, 1, 2, 3];
+    hoursTable.innerHTML = order.map(function (day) {
+      var hours = config.hours[day];
+      var label = day === 4 ? 'Thursday' : day === 5 ? 'Friday' : day === 6 ? 'Saturday' : day === 0 ? 'Sunday' : day === 1 ? 'Monday' : day === 2 ? 'Tuesday' : 'Wednesday';
+      return '<tr' + (hours ? '' : ' class="closed"') + '><td>' + label + '</td><td>' + (hours ? hours[0] + ' – ' + hours[1] : 'Closed') + '</td></tr>';
+    }).join('');
+  }
+  var location = document.getElementById('publicLocation');
+  if (location && config.settings && config.settings.location) location.textContent = config.settings.location;
+  var phone = document.querySelector('.publicPhone');
+  if (phone && config.settings && config.settings.phone) {
+    phone.textContent = config.settings.phone;
+    phone.href = 'tel:' + config.settings.phone.replace(/[^+0-9]/g, '');
+  }
+
+  if (Array.isArray(config.services) && config.services.length) {
+    var selectedService = svc.value;
+    svc.innerHTML = '';
+    config.services.forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = item.id;
+      option.textContent = item.name + ' — ' + item.price + ' TND';
+      svc.appendChild(option);
+    });
+    if (config.services.some(function (item) { return item.id === selectedService; })) svc.value = selectedService;
+    var cards = document.getElementById('serviceCards');
+    if (cards) {
+      var artNames = ['art-cut', 'art-beard', 'art-combo', 'art-kids'];
+      var artSymbols = ['✂', '◌', '✦', '✳'];
+      cards.innerHTML = config.services.map(function (item, index) {
+        return '<article class="service-card"><div class="service-art ' + artNames[index % artNames.length] + '"><span class="art-label">' + String(index + 1).padStart(2, '0') + ' / ZIKO</span><span class="art-symbol">' + artSymbols[index % artSymbols.length] + '</span></div><div class="service-copy"><div class="service-title"><h3>' + escapeText(item.name) + '</h3><span class="price">' + escapeText(item.price) + ' <small>TND</small></span></div><p>' + escapeText(item.description || 'A considered service, tailored to you.') + '</p><div class="service-meta"><span>' + escapeText(item.min) + ' min</span><a href="#book" data-service="' + escapeText(item.id) + '">Book this <span>↗</span></a></div></div></article>';
+      }).join('');
+      cards.querySelectorAll('[data-service]').forEach(function (link) {
+        link.addEventListener('click', function () {
+          svc.value = link.getAttribute('data-service');
+          updateBookingSummary();
+          loadSlots();
+        });
+      });
+    }
+  }
+  if (Array.isArray(config.barbers) && config.barbers.length) {
+    var selectedBarber = br.value;
+    br.innerHTML = '';
+    config.barbers.forEach(function (name) {
+      var option = document.createElement('option');
+      option.value = name; option.textContent = name; br.appendChild(option);
+    });
+    if (config.barbers.includes(selectedBarber)) br.value = selectedBarber;
+  }
+  updateBookingSummary();
+}
+async function loadShopConfig() {
+  try {
+    var response = await fetch('/api/config');
+    if (response.ok) populateShopConfig(await response.json());
+  } catch (e) {}
+}
 var d = document.getElementById('d'), svc = document.getElementById('svc'), br = document.getElementById('barber'),
     box = document.getElementById('slots'), msg = document.getElementById('msg'), sel = null;
 
@@ -12,7 +95,8 @@ function t(s) { return (L[lang] && L[lang][s]) || s; }
 
 function openNow() {
   var n = new Date(Date.now() + 3600000), day = n.getUTCDay(), m = n.getUTCHours() * 60 + n.getUTCMinutes();
-  var r = day === 3 ? null : [600, 1320];
+  var r = shopConfig ? shopConfig.hours[day] : (day === 3 ? null : ['10:00', '22:00']);
+  if (r) r = [Number(r[0].slice(0,2))*60+Number(r[0].slice(3)), Number(r[1].slice(0,2))*60+Number(r[1].slice(3))];
   return !!r && m >= r[0] && m < r[1];
 }
 function apply() {
@@ -20,7 +104,8 @@ function apply() {
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
   var op = openNow();
   ['ob', 'hs'].forEach(function (id) { var e = document.getElementById(id); e.firstChild._o = op ? 'Open now' : 'Closed now'; e.firstChild._f = 1; });
-  document.getElementById('hd').className = 'dot ' + (op ? 'on' : 'off');
+  document.getElementById('hd').className = 'live-dot ' + (op ? 'on' : 'off');
+  var hd2 = document.getElementById('hd2'); if (hd2) hd2.className = 'live-dot ' + (op ? 'on' : 'off');
   var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), n;
   while ((n = w.nextNode())) {
     if (n._o === undefined) n._o = n.nodeValue.trim();
@@ -43,7 +128,7 @@ function apply() {
 function show(text, ok) { msg.style.display = 'block'; msg.className = ok ? 'ok' : 'err'; msg.textContent = text; }
 
 async function loadSlots() {
-  sel = null; box.textContent = t('Loading...');
+  sel = null; updateBookingSummary(); box.textContent = t('Loading...');
   try {
     var j = await (await fetch('/api/slots?date=' + d.value + '&service=' + svc.value + '&barber=' + br.value)).json();
     box.innerHTML = '';
@@ -54,16 +139,17 @@ async function loadSlots() {
       b.onclick = function () {
         sel = s.time;
         [].forEach.call(box.children, function (c) { c.classList.remove('sel'); });
-        b.classList.add('sel');
+        b.classList.add('sel'); updateBookingSummary();
       };
       box.appendChild(b);
     });
   } catch (e) { box.textContent = t('Could not load times. Is the server running?'); }
 }
 
-d.min = new Date().toISOString().slice(0, 10);
+d.min = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
 d.value = d.min;
-d.onchange = svc.onchange = br.onchange = loadSlots;
+d.onchange = function () { updateBookingSummary(); loadSlots(); };
+svc.onchange = br.onchange = function () { updateBookingSummary(); loadSlots(); };
 
 document.getElementById('go').onclick = async function () {
   if (!sel) return show(t('Please choose a free time slot.'), false);
@@ -83,6 +169,7 @@ function showDone(b, emailed) {
   document.getElementById('db').textContent = b.barber;
   document.getElementById('dd').textContent = b.date;
   document.getElementById('dt').textContent = b.time;
+  document.querySelectorAll('.booking-steps .step').forEach(function (step) { step.classList.toggle('active', Number(step.dataset.step) === 3); });
   document.getElementById('de').hidden = !emailed;
   document.getElementById('done').hidden = false;
   document.getElementById('done').scrollTop = 0;
@@ -98,4 +185,5 @@ document.getElementById('back').onclick = function () {
 setInterval(apply, 60000);
 
 apply();
-loadSlots();
+updateBookingSummary();
+loadShopConfig().then(loadSlots);
