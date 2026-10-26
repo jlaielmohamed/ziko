@@ -76,7 +76,7 @@ begin
     raise exception 'Admin access required' using errcode = '42501';
   end if;
 
-  delete from public.services;
+  delete from public.services where id is not null;
   insert into public.services (id, name, duration_minutes, price, description, sort_order)
   select x.id, x.name, x.duration_minutes, x.price, x.description, x.sort_order
   from jsonb_to_recordset(p_services) as x(
@@ -89,7 +89,7 @@ begin
     business_hours = excluded.business_hours, shop_settings = excluded.shop_settings,
     updated_at = excluded.updated_at;
 
-  delete from public.blocked_dates;
+  delete from public.blocked_dates where date is not null;
   insert into public.blocked_dates (date)
   select distinct x from unnest(coalesce(p_blocked_dates, array[]::date[])) as x;
 end;
