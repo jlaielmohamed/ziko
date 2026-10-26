@@ -35,6 +35,22 @@ const validDate = d => {
 };
 
 async function readConfig() {
+  const { url, key } = supabaseConfig();
+  if (url && key) {
+    const [services, overviewRows, blockedRows] = await Promise.all([
+      supabaseRequest('/rest/v1/services?select=id,name,duration_minutes,price,description&order=sort_order.asc', key),
+      supabaseRequest('/rest/v1/overview?select=barbers,business_hours,shop_settings&id=eq.true&limit=1', key),
+      supabaseRequest('/rest/v1/blocked_dates?select=date&order=date.asc', key)
+    ]);
+    const overview = overviewRows[0] || {};
+    return {
+      services: services.map(item => ({ id: item.id, name: item.name, min: item.duration_minutes, price: Number(item.price), description: item.description || '' })),
+      barbers: overview.barbers || clone(DEFAULT_CONFIG.barbers),
+      hours: overview.business_hours || clone(DEFAULT_CONFIG.hours),
+      blockedDates: blockedRows.map(item => String(item.date).slice(0, 10)),
+      settings: { ...DEFAULT_CONFIG.settings, ...(overview.shop_settings || {}) }
+    };
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(CONFIG_FILE)) await fs.promises.writeFile(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2));
   try {
@@ -45,7 +61,21 @@ async function readConfig() {
     return clone(DEFAULT_CONFIG);
   }
 }
-async function writeConfig(config) {
+async function writeConfig(config, token) {
+  const { url, key } = supabaseConfig();
+  if (url && key) {
+    await supabaseRequest('/rest/v1/rpc/save_shop_config', key, token, 'POST', {
+      p_services: config.services.map((item, sort_order) => ({
+        id: item.id, name: item.name, duration_minutes: item.min, price: item.price,
+        description: item.description, sort_order
+      })),
+      p_barbers: config.barbers,
+      p_business_hours: config.hours,
+      p_shop_settings: config.settings,
+      p_blocked_dates: config.blockedDates
+    });
+    return;
+  }
   await fs.promises.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 async function loadBook() {
@@ -95,6 +125,24 @@ function publicConfig(config) {
 }
 function supabaseConfig() {
   return { url: process.env.VITE_SUPABASE_URL || '', key: process.env.VITE_SUPABASE_ANON_KEY || '' };
+}
+async function supabaseRequest(resource, key, token = key, method = 'GET', body) {
+  const { url } = supabaseConfig();
+  const response = await fetch(url.replace(/\/$/, '') + resource, {
+    method,
+    headers: {
+      apikey: key,
+      Authorization: 'Bearer ' + token,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error('Supabase request failed (' + response.status + '): ' + detail.slice(0, 300));
+  }
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
 }
 async function verifyAdminToken(token) {
   const { url, key } = supabaseConfig();
@@ -239,7 +287,7 @@ app.put('/api/admin/settings', authorize, async (req, res) => {
     const config = { services: next.services.map(item => ({ id: item.id, name: item.name.trim(), min: Number(item.min), price: Number(item.price), description: String(item.description || '').slice(0, 220) })),
       barbers: [...new Set(next.barbers.map(name => name.trim()).filter(Boolean))], hours: next.hours, blockedDates: [...new Set(next.blockedDates)],
       settings: { ...DEFAULT_CONFIG.settings, ...next.settings } };
-    await writeConfig(config); res.json({ ok: true, config });
+    await writeConfig(config, readToken(req)); res.json({ ok: true, config });
   } catch (error) { console.error(error); res.status(500).json({ error: 'Could not save settings.' }); }
 });
 
