@@ -1,3 +1,5 @@
+import { supabase, supabaseConfigured } from '../src/lib/supabase.ts';
+
 var shopConfig = null;
 function escapeText(value) {
   return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
@@ -76,9 +78,24 @@ function populateShopConfig(config) {
   updateBookingSummary();
 }
 async function loadShopConfig() {
+  if (!supabaseConfigured || !supabase) return;
   try {
-    var response = await fetch('/api/config');
-    if (response.ok) populateShopConfig(await response.json());
+    const [servicesRes, overviewRes, blockedRes] = await Promise.all([
+      supabase.from('services').select('id,name,duration_minutes,price,description').order('sort_order', { ascending: true }),
+      supabase.from('overview').select('barbers,business_hours,shop_settings').eq('id', true).maybeSingle(),
+      supabase.from('blocked_dates').select('date').order('date', { ascending: true })
+    ]);
+    const services = (servicesRes.data || []).map(item => ({ id: item.id, name: item.name, min: item.duration_minutes, price: Number(item.price), description: item.description || '' }));
+    const overview = overviewRes.data || {};
+    const blockedDates = (blockedRes.data || []).map(item => String(item.date).slice(0, 10));
+    const config = {
+      services: services.length ? services : [{ id: 'haircut', name: 'Haircut', min: 30, price: 15, description: 'A clean, considered cut shaped around you.' }],
+      barbers: overview.barbers && overview.barbers.length ? overview.barbers : ['Wassime', 'Yacine'],
+      hours: overview.business_hours || { 0: ['10:00', '22:00'], 1: ['10:00', '22:00'], 2: ['10:00', '22:00'], 3: null, 4: ['10:00', '22:00'], 5: ['10:00', '22:00'], 6: ['10:00', '22:00'] },
+      blockedDates: blockedDates,
+      settings: { shopName: 'Ziko Hairstyle', location: 'Sfax, Tunisia', phone: '+216 29 090 385', email: 'mohamedjlaiel4000@gmail.com', instagram: 'https://www.instagram.com/ziko_hairstyle/', ...(overview.shop_settings || {}) }
+    };
+    populateShopConfig(config);
   } catch (e) {}
 }
 var d = document.getElementById('d'), svc = document.getElementById('svc'), br = document.getElementById('barber'),
@@ -130,10 +147,25 @@ function show(text, ok) { msg.style.display = 'block'; msg.className = ok ? 'ok'
 async function loadSlots() {
   sel = null; updateBookingSummary(); box.textContent = t('Loading...');
   try {
-    var j = await (await fetch('/api/slots?date=' + d.value + '&service=' + svc.value + '&barber=' + br.value)).json();
+    if (!shopConfig) { box.textContent = t('Could not load times. Is the server running?'); return; }
+    const date = d.value, serviceId = svc.value, barber = br.value;
+    if (!validDate(date)) { box.textContent = t('Closed or no times available on this day.'); return; }
+    const service = shopConfig.services.find(item => item.id === serviceId);
+    const hours = shopConfig.hours[new Date(date + 'T00:00:00Z').getUTCDay()];
+    if (!service || !hours || !shopConfig.barbers.includes(barber) || (shopConfig.blockedDates||[]).includes(date)) { box.textContent = t('Closed or no times available on this day.'); return; }
+    const now = tunisNow(), today = now.toISOString().slice(0,10), nowMin = now.getUTCHours()*60 + now.getUTCMinutes();
+    if (date < today) { box.textContent = t('Closed or no times available on this day.'); return; }
+    if (!supabaseConfigured || !supabase) { box.textContent = t('Server not reachable.'); return; }
+    const { data: appointments } = await supabase.from('appointments').select('start_time,end_time,status,barber').eq('appointment_date', date);
+    const busy = (appointments||[]).filter(a => a.status !== 'Cancelled' && (!a.barber || a.barber === barber)).map(a => [toMin(a.start_time), toMin(a.end_time)]);
+    const slots = [];
+    for (let start = toMin(hours[0]); start + Number(service.min) <= toMin(hours[1]); start += STEP) {
+      const free = !(date === today && start <= nowMin) && !busy.some(([a,b]) => start < b && start + Number(service.min) > a);
+      slots.push({ time: toStr(start), free });
+    }
     box.innerHTML = '';
-    if (!j.slots.length) { box.textContent = t('Closed or no times available on this day.'); return; }
-    j.slots.forEach(function (s) {
+    if (!slots.length) { box.textContent = t('Closed or no times available on this day.'); return; }
+    slots.forEach(function (s) {
       var b = document.createElement('button');
       b.className = 'slot'; b.type = 'button'; b.textContent = s.time; b.disabled = !s.free;
       b.onclick = function () {
@@ -153,13 +185,30 @@ svc.onchange = br.onchange = function () { updateBookingSummary(); loadSlots(); 
 
 document.getElementById('go').onclick = async function () {
   if (!sel) return show(t('Please choose a free time slot.'), false);
-  var body = { service: svc.value, barber: br.value, lang: lang, email: document.getElementById('em').value.trim(), date: d.value, time: sel,
-    name: document.getElementById('nm').value.trim(), phone: document.getElementById('ph').value.trim() };
+  if (!shopConfig) return show(t('Server not reachable.'), false);
+  const svcEl = svc, brEl = br, dEl = d;
+  const service = shopConfig.services.find(item => item.id === svcEl.value);
+  if (!service || !shopConfig.barbers.includes(brEl.value)) return show(t('Booking failed.'), false);
+  const name = document.getElementById('nm').value.trim(), phone = document.getElementById('ph').value.trim(), email = document.getElementById('em').value.trim();
+  if (name.length < 2 || name.length > 60) return show(t('Please enter your name.'), false);
+  if (!/^\+?[0-9 ()-]{8,20}$/.test(phone)) return show(t('Please enter a valid phone number.'), false);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 100) return show(t('Please enter a valid email address.'), false);
+  if (!supabaseConfigured || !supabase) return show(t('Server not reachable.'), false);
   try {
-    var r = await fetch('/api/book', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    var j = await r.json();
-    if (!r.ok) { show(t(j.error || 'Booking failed.'), false); loadSlots(); return; }
-    showDone(body, j.emailed);
+    const date = dEl.value, time = sel;
+    const { data: appointments } = await supabase.from('appointments').select('start_time,end_time,status,barber').eq('appointment_date', date);
+    const hours = shopConfig.hours[new Date(date + 'T00:00:00Z').getUTCDay()];
+    if (!hours || (shopConfig.blockedDates||[]).includes(date)) { show(t('Closed or no times available on this day.'), false); loadSlots(); return; }
+    const startMin = toMin(time), endMin = startMin + Number(service.min);
+    const busy = (appointments||[]).filter(a => a.status !== 'Cancelled' && (!a.barber || a.barber === brEl.value)).map(a => [toMin(a.start_time), toMin(a.end_time)]);
+    const clash = busy.some(([a,b]) => startMin < b && endMin > a);
+    if (clash) { show(t('Sorry, this time is already booked. Please pick another one.'), false); loadSlots(); return; }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const now = tunisNow();
+    const row = { id, created_at: now.toISOString().slice(0,16).replace('T',' '), created_iso: now.toISOString(), name, phone, service_name: service.name, service_id: service.id, price: service.price, appointment_date: date, start_time: time, end_time: toStr(endMin), status: 'Requested', calendar_event_id: '', email, barber: brEl.value, lang: lang };
+    const { error } = await supabase.from('appointments').insert(row);
+    if (error) { show(t('Booking failed.'), false); loadSlots(); return; }
+    showDone({ service: svcEl.value, barber: brEl.value, lang: lang, email: email, date: date, time: sel, name: name, phone: phone }, false);
     loadSlots();
   } catch (e) { show(t('Server not reachable.'), false); }
 };

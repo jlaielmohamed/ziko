@@ -11,12 +11,7 @@ function message(text, error = false) {
   clearTimeout(message.timer);
   message.timer = setTimeout(() => { el.className = 'dash-message'; }, 4800);
 }
-async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}) } });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || 'Request failed.');
-  return body;
-}
+async function api() { throw new Error('Not used'); }
 function safe(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
@@ -33,18 +28,13 @@ async function verifySession() {
   if (!session) throw new Error('Please sign in again.');
   const { data: admin, error } = await supabase.from('admin_users').select('user_id').eq('user_id', session.user.id).maybeSingle();
   if (error || !admin) throw new Error('This account is not authorized to manage the studio.');
-  await api('/api/admin/session', { method: 'POST', body: JSON.stringify({ access_token: session.access_token }) });
   $('adminEmail').textContent = session.user.email || 'Studio admin';
-  supabase.auth.onAuthStateChange((event, nextSession) => {
-    if (event === 'TOKEN_REFRESHED' && nextSession) {
-      fetch('/api/admin/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ access_token: nextSession.access_token }) });
-    }
+  supabase.auth.onAuthStateChange((event) => {
     if (event === 'SIGNED_OUT') window.location.replace('/admin.html');
   });
 }
 $('signout').addEventListener('click', async () => {
-  await fetch('/api/admin/session', { method: 'DELETE', credentials: 'same-origin' });
-  await supabase.auth.signOut();
+  if (supabase) await supabase.auth.signOut();
   window.location.replace('/admin.html');
 });
 function appointmentTable(target, rows, compact = false) {
@@ -56,16 +46,21 @@ function appointmentTable(target, rows, compact = false) {
   });
   rows.forEach(row => {
     const tr = table.insertRow();
-    const values = compact ? [row[6], row[7], row[2], row[4], row[9]] : [row[6], row[7], row[2], row[3], row[4], row[11], row[9]];
+    const values = compact ? [row.appointment_date, row.start_time, row.name, row.service_name, row.status] : [row.appointment_date, row.start_time, row.name, row.phone, row.service_name, row.barber, row.status];
     values.forEach(value => { const td = tr.insertCell(); td.textContent = value; });
     if (!compact) {
       const td = tr.insertCell();
       const select = document.createElement('select');
       ['Requested', 'Confirmed', 'Completed', 'Cancelled'].forEach(status => {
-        const option = document.createElement('option'); option.value = status; option.textContent = status; option.selected = row[9] === status; select.appendChild(option);
+        const option = document.createElement('option'); option.value = status; option.textContent = status; option.selected = row.status === status; select.appendChild(option);
       });
       select.addEventListener('change', async () => {
-        try { await api('/api/admin/appointments/' + encodeURIComponent(row[0]), { method: 'PATCH', body: JSON.stringify({ status: select.value }) }); row[9] = select.value; message('Appointment status updated.'); }
+        try { 
+          if (!supabase) throw new Error('Not configured');
+          const { error } = await supabase.from('appointments').update({ status: select.value }).eq('id', row.id);
+          if (error) throw error;
+          row.status = select.value; message('Appointment status updated.'); 
+        }
         catch (error) { message(error.message, true); }
       });
       td.appendChild(select);
@@ -75,7 +70,7 @@ function appointmentTable(target, rows, compact = false) {
 }
 function renderAppointments() {
   const date = $('filterDate').value, status = $('filterStatus').value;
-  const rows = appointments.filter(row => (!date || row[6] === date) && (!status || row[9] === status));
+  const rows = appointments.filter(row => (!date || row.appointment_date === date) && (!status || row.status === status));
   appointmentTable('appointmentsTable', rows);
   appointmentTable('recentTable', appointments.slice(0, 6), true);
 }
@@ -145,8 +140,17 @@ async function saveSettings(kind) {
     config.barbers = $('barberNames').value.split('\n').map(name => name.trim()).filter(Boolean);
   }
   try {
-    const result = await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(config) });
-    config = result.config;
+    if (!supabase) throw new Error('Supabase not configured');
+    await supabase.rpc('save_shop_config', {
+      p_services: config.services.map((item, sort_order) => ({
+        id: item.id, name: item.name, duration_minutes: item.min, price: item.price,
+        description: item.description || '', sort_order
+      })),
+      p_barbers: config.barbers,
+      p_business_hours: config.hours,
+      p_shop_settings: config.settings,
+      p_blocked_dates: config.blockedDates
+    });
     renderServices(); renderHours(); renderBlocked(); renderSettings();
     message('Shop settings saved.');
   } catch (error) { message(error.message, true); }
@@ -167,15 +171,50 @@ $('addBlocked').addEventListener('click', () => {
 $('filterDate').addEventListener('change', renderAppointments);
 $('filterStatus').addEventListener('change', renderAppointments);
 $('clearFilters').addEventListener('click', () => { $('filterDate').value = ''; $('filterStatus').value = ''; renderAppointments(); });
+async function computeStats(appts) {
+  const now = new Date(Date.now() + 3600000);
+  const today = now.toISOString().slice(0,10);
+  const month = today.slice(0,7);
+  const year = today.slice(0,4);
+  const blank = () => ({ revenue: 0, count: 0 });
+  const add = (obj, key, price) => { obj[key] = obj[key] || blank(); obj[key].revenue += price; obj[key].count++; };
+  const out = { today, month, year, days: {}, months: {}, years: {}, barbersMonth: {}, barbersYear: {}, totals: { today: blank(), month: blank(), year: blank() } };
+  (appts||[]).forEach(a => {
+    if (a.status === 'Cancelled') return;
+    const date = a.appointment_date;
+    const price = Number(a.price) || 0;
+    const barber = a.barber || 'Not set';
+    if (!/^d{4}-d{2}-d{2}$/.test(date)) return;
+    add(out.years, date.slice(0,4), price);
+    if (date === today) add(out.totals, 'today', price);
+    if (date.slice(0,4) === year) { add(out.months, date.slice(0,7), price); add(out.barbersYear, barber, price); add(out.totals, 'year', price); }
+    if (date.slice(0,7) === month) { add(out.days, date, price); add(out.barbersMonth, barber, price); add(out.totals, 'month', price); }
+  });
+  return out;
+}
 async function initialize() {
   try {
     await verifySession();
-    const [stats, bookingData, settings] = await Promise.all([api('/api/admin/stats'), api('/api/admin/bookings'), api('/api/admin/settings')]);
-    appointments = bookingData.rows;
-    config = settings;
+    const [apptsRes, servicesRes, overviewRes, blockedRes] = await Promise.all([
+      supabase.from('appointments').select('*').order('created_iso', { ascending: false }),
+      supabase.from('services').select('*').order('sort_order', { ascending: true }),
+      supabase.from('overview').select('*').eq('id', true).maybeSingle(),
+      supabase.from('blocked_dates').select('date').order('date', { ascending: true })
+    ]);
+    appointments = apptsRes.data || [];
+    const services = (servicesRes.data || []).map(item => ({ id: item.id, name: item.name, min: item.duration_minutes, price: Number(item.price), description: item.description || '' }));
+    const overview = overviewRes.data || {};
+    const blockedDates = (blockedRes.data || []).map(item => String(item.date).slice(0,10));
+    config = {
+      services: services.length ? services : [{ id: 'haircut', name: 'Haircut', min: 30, price: 15, description: '' }],
+      barbers: overview.barbers && overview.barbers.length ? overview.barbers : ['Wassime', 'Yacine'],
+      hours: overview.business_hours || { 0: ['10:00','22:00'], 1: ['10:00','22:00'], 2: ['10:00','22:00'], 3: null, 4: ['10:00','22:00'], 5: ['10:00','22:00'], 6: ['10:00','22:00'] },
+      blockedDates,
+      settings: { shopName: 'Ziko Hairstyle', location: 'Sfax, Tunisia', phone: '+216 29 090 385', email: 'mohamedjlaiel4000@gmail.com', instagram: 'https://www.instagram.com/ziko_hairstyle/', ...(overview.shop_settings || {}) }
+    };
+    const stats = await computeStats(appointments);
     renderStats(stats); renderAppointments(); renderServices(); renderHours(); renderBlocked(); renderSettings();
   } catch (error) {
-    await fetch('/api/admin/session', { method: 'DELETE', credentials: 'same-origin' });
     if (supabase) await supabase.auth.signOut();
     message(error.message, true);
     setTimeout(() => window.location.replace('/admin.html'), 800);

@@ -1,4 +1,23 @@
--- Ziko shop data. Appointment records remain in data/bookings.xlsx.
+-- Ziko shop data. All data stored in Supabase.
+create table if not exists public.appointments (
+  id text primary key,
+  created_at text,
+  created_iso timestamptz not null default now(),
+  name text not null,
+  phone text not null,
+  service_name text not null,
+  service_id text,
+  price numeric(10, 2) not null default 0,
+  appointment_date date not null,
+  start_time text not null,
+  end_time text not null,
+  status text not null check (status in ('Requested', 'Confirmed', 'Cancelled', 'Completed')),
+  calendar_event_id text default '',
+  email text not null,
+  barber text not null,
+  lang text default 'en'
+);
+
 create table if not exists public.admin_users (
   user_id uuid primary key references auth.users (id) on delete cascade
 );
@@ -26,6 +45,7 @@ create table if not exists public.blocked_dates (
   created_at timestamptz not null default now()
 );
 
+alter table public.appointments enable row level security;
 alter table public.admin_users enable row level security;
 alter table public.services enable row level security;
 alter table public.overview enable row level security;
@@ -33,6 +53,8 @@ alter table public.blocked_dates enable row level security;
 
 grant select on public.admin_users to authenticated;
 grant select on public.services, public.overview, public.blocked_dates to anon, authenticated;
+grant insert on public.appointments to anon, authenticated;
+grant select, update, delete on public.appointments to authenticated;
 grant insert, update, delete on public.services, public.overview, public.blocked_dates to authenticated;
 
 drop policy if exists "Admin can read own allowlist entry" on public.admin_users;
@@ -59,6 +81,19 @@ drop policy if exists "Admins manage blocked dates" on public.blocked_dates;
 create policy "Admins manage blocked dates" on public.blocked_dates for all to authenticated
   using (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())))
   with check (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())));
+
+drop policy if exists "Anyone can create appointments" on public.appointments;
+create policy "Anyone can create appointments" on public.appointments for insert to anon, authenticated with check (true);
+drop policy if exists "Admins read appointments" on public.appointments;
+create policy "Admins read appointments" on public.appointments for select to authenticated
+  using (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())));
+drop policy if exists "Admins update appointments" on public.appointments;
+create policy "Admins update appointments" on public.appointments for update to authenticated
+  using (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())))
+  with check (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())));
+drop policy if exists "Admins delete appointments" on public.appointments;
+create policy "Admins delete appointments" on public.appointments for delete to authenticated
+  using (exists (select 1 from public.admin_users a where a.user_id = (select auth.uid())));
 
 create or replace function public.save_shop_config(
   p_services jsonb,
