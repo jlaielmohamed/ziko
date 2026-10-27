@@ -145,23 +145,29 @@ function apply() {
 function show(text, ok) { msg.style.display = 'block'; msg.className = ok ? 'ok' : 'err'; msg.textContent = text; }
 
 async function loadSlots() {
+  var toMin = function(x){ var p=String(x).split(':').map(Number); return p[0]*60+p[1]; };
+  var toStr = function(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); };
+  var tunisNow = function(){ return new Date(Date.now() + 3600000); };
+  var validDate = function(d){ if(!/^\d{4}-\d{2}-\d{2}$/.test(d||'')) return false; var date=new Date(d+'T00:00:00Z'); return !Number.isNaN(date.getTime()) && date.toISOString().slice(0,10)===d; };
+  var STEP = 30;
   sel = null; updateBookingSummary(); box.textContent = t('Loading...');
   try {
     if (!shopConfig) { box.textContent = t('Could not load times. Is the server running?'); return; }
-    const date = d.value, serviceId = svc.value, barber = br.value;
+    var date = d.value, serviceId = svc.value, barber = br.value;
     if (!validDate(date)) { box.textContent = t('Closed or no times available on this day.'); return; }
-    const service = shopConfig.services.find(item => item.id === serviceId);
-    const hours = shopConfig.hours[new Date(date + 'T00:00:00Z').getUTCDay()];
+    var service = shopConfig.services.find(function(item){ return item.id === serviceId; });
+    var hours = shopConfig.hours[new Date(date + 'T00:00:00Z').getUTCDay()];
     if (!service || !hours || !shopConfig.barbers.includes(barber) || (shopConfig.blockedDates||[]).includes(date)) { box.textContent = t('Closed or no times available on this day.'); return; }
-    const now = tunisNow(), today = now.toISOString().slice(0,10), nowMin = now.getUTCHours()*60 + now.getUTCMinutes();
+    var now = tunisNow(), today = now.toISOString().slice(0,10), nowMin = now.getUTCHours()*60 + now.getUTCMinutes();
     if (date < today) { box.textContent = t('Closed or no times available on this day.'); return; }
     if (!supabaseConfigured || !supabase) { box.textContent = t('Server not reachable.'); return; }
-    const { data: appointments } = await supabase.from('appointments').select('start_time,end_time,status,barber').eq('appointment_date', date);
-    const busy = (appointments||[]).filter(a => a.status !== 'Cancelled' && (!a.barber || a.barber === barber)).map(a => [toMin(a.start_time), toMin(a.end_time)]);
-    const slots = [];
-    for (let start = toMin(hours[0]); start + Number(service.min) <= toMin(hours[1]); start += STEP) {
-      const free = !(date === today && start <= nowMin) && !busy.some(([a,b]) => start < b && start + Number(service.min) > a);
-      slots.push({ time: toStr(start), free });
+    var apptRes = await supabase.from('appointments').select('start_time,end_time,status,barber').eq('appointment_date', date);
+    var appointments = apptRes.data || [];
+    var busy = appointments.filter(function(a){ return a.status !== 'Cancelled' && (!a.barber || a.barber === barber); }).map(function(a){ return [toMin(a.start_time), toMin(a.end_time)]; });
+    var slots = [];
+    for (var start = toMin(hours[0]); start + Number(service.min) <= toMin(hours[1]); start += STEP) {
+      var free = !(date === today && start <= nowMin) && !busy.some(function(b){ return start < b[1] && start + Number(service.min) > b[0]; });
+      slots.push({ time: toStr(start), free: free });
     }
     box.innerHTML = '';
     if (!slots.length) { box.textContent = t('Closed or no times available on this day.'); return; }
