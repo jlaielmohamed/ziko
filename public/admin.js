@@ -1,6 +1,14 @@
-import { supabase, supabaseConfigured } from '../src/lib/supabase.ts';
+// Supabase Client Configuration
+const SUPABASE_URL = 'https://lnotxnrqxapcnzofdphd.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxub3R4bnJxeGFwY256b2ZkcGhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNDAxNjcsImV4cCI6MjEwODcxNjE2N30.euGQsYKKm4qbw9N70Fie8c1As11Fzi37Z_-xfh2CUVI';
+
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseConfigured = true;
 
 const form = document.getElementById('loginForm');
+
 const message = document.getElementById('authMessage');
 const button = document.getElementById('loginButton');
 
