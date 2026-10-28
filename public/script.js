@@ -152,7 +152,7 @@ async function loadSlots() {
   var STEP = 30;
   sel = null; updateBookingSummary(); box.textContent = t('Loading...');
   try {
-    if (!shopConfig) { box.textContent = t('Could not load times. Is the server running?'); return; }
+    if (!shopConfig) { box.textContent = t('Could not load times. Please try again later.'); return; }
     var date = d.value, serviceId = svc.value, barber = br.value;
     if (!validDate(date)) { box.textContent = t('Closed or no times available on this day.'); return; }
     var service = shopConfig.services.find(function(item){ return item.id === serviceId; });
@@ -181,7 +181,7 @@ async function loadSlots() {
       };
       box.appendChild(b);
     });
-  } catch (e) { box.textContent = t('Could not load times. Is the server running?'); }
+  } catch (e) { box.textContent = t('Could not load times. Please try again later.'); }
 }
 
 d.min = new Date(Date.now() + 3600000).toISOString().slice(0, 10);
